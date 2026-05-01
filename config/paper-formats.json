@@ -1,0 +1,8 @@
+{
+  "formats": [
+    { "id": "a4", "standard": "ISO", "widthCm": 21.0, "heightCm": 29.7 },
+    { "id": "a3", "standard": "ISO", "widthCm": 29.7, "heightCm": 42.0 },
+    { "id": "letter", "standard": "US", "widthCm": 21.59, "heightCm": 27.94 },
+    { "id": "tabloid", "standard": "US", "widthCm": 27.94, "heightCm": 43.18 }
+  ]
+}

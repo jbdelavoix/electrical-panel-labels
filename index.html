@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Electrical Panel Labels Generator</title>
+  <meta id="meta-description" name="description" content="Create and print electrical panel labels with accurate dimensions, multilingual UI, JSON import/export, and shareable permalinks.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://jbdelavoix.github.io/electrical-panel-labels/">
+  <meta property="og:type" content="website">
+  <meta id="meta-og-title" property="og:title" content="Electrical Panel Labels Generator">
+  <meta id="meta-og-description" property="og:description" content="Generate printable electrical panel labels with physical sizing, icon support, multilingual UI, and JSON workflows.">
+  <meta property="og:url" content="https://jbdelavoix.github.io/electrical-panel-labels/">
+  <meta id="meta-og-site-name" property="og:site_name" content="Electrical Panel Labels">
+  <meta name="twitter:card" content="summary">
+  <meta id="meta-twitter-title" name="twitter:title" content="Electrical Panel Labels Generator">
+  <meta id="meta-twitter-description" name="twitter:description" content="Create accurate, printable electrical panel labels. Supports multilingual UI, icons, and JSON import/export.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://unpkg.com/lucide@latest"></script>
+  <script defer src="app.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --module-width: 18mm;
+      --label-height: 30mm;
+      --icon-height: 10mm;
+      --location-height: 20mm;
+      --ui-bg: #f3f7ff;
+      --ui-text: #0f172a;
+      --ui-card: rgba(255, 255, 255, 0.85);
+      --ui-border: #cbd5e1;
+      --ui-muted: #475569;
+      --ui-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      --ui-ring: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    body {
+      background: #ffffff;
+      color: var(--ui-text);
+    }
+    .ui-card {
+      background: var(--ui-card);
+      border: 1px solid var(--ui-border);
+      border-radius: 14px;
+      box-shadow: var(--ui-shadow);
+      backdrop-filter: blur(4px);
+    }
+    .ui-input {
+      border: 1px solid var(--ui-border);
+      border-radius: 10px;
+      background: #fff;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .ui-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: var(--ui-ring);
+    }
+    .ui-btn {
+      border-radius: 10px;
+      border: 1px solid transparent;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: transform 0.08s ease, filter 0.15s ease;
+    }
+    .ui-btn:hover { filter: brightness(1.03); }
+    .ui-btn:active { transform: translateY(1px); }
+    @page a4Landscape { size: A4 landscape; }
+    @page a4Portrait { size: A4 portrait; }
+    @page a3Landscape { size: A3 landscape; }
+    @page a3Portrait { size: A3 portrait; }
+    @page letterLandscape { size: letter landscape; }
+    @page letterPortrait { size: letter portrait; }
+    @page tabloidLandscape { size: tabloid landscape; }
+    @page tabloidPortrait { size: tabloid portrait; }
+    #rows-root { page: a4Landscape; }
+    @media print {
+      body.print-a4.print-portrait #rows-root { page: a4Portrait; }
+      body.print-a4:not(.print-portrait) #rows-root { page: a4Landscape; }
+      body.print-a3.print-portrait #rows-root { page: a3Portrait; }
+      body.print-a3:not(.print-portrait) #rows-root { page: a3Landscape; }
+      body.print-letter.print-portrait #rows-root { page: letterPortrait; }
+      body.print-letter:not(.print-portrait) #rows-root { page: letterLandscape; }
+      body.print-tabloid.print-portrait #rows-root { page: tabloidPortrait; }
+      body.print-tabloid:not(.print-portrait) #rows-root { page: tabloidLandscape; }
+      html, body { margin: 0; padding: 0; background: white; }
+      .hide-print { display: none !important; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      #labels-root { max-width: none !important; padding: 0 !important; margin: 0 !important; }
+      #rows-root > section,
+      #rows-root .labels-row {
+        margin-top: 0.3cm !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+      }
+      #labels-root,
+      #rows-root,
+      #rows-root > section,
+      #rows-root .labels-row,
+      .print-split,
+      .print-chunk {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+      }
+      .module-table { background: transparent !important; }
+      .module-table td { border-color: #000 !important; }
+      .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
+      .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) {
+        background: white !important;
+        color: #000 !important;
+      }
+      .sheet-row-break { page-break-before: always; }
+      .is-selected { outline: none !important; }
+      #rows-root > section,
+      #rows-root .labels-row,
+      .print-split,
+      .print-chunk {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+    }
+    .module-table { border-collapse: collapse; text-align: center; font-size: 9pt; table-layout: fixed; width: max-content; min-width: max-content; }
+    .module-table td { width: var(--module-width); box-sizing: border-box; padding-left: 0; padding-right: 0; }
+    .module-table td.mod-2 { width: calc(var(--module-width) * 2); }
+    .module-table td.mod-3 { width: calc(var(--module-width) * 3); }
+    .module-table td.mod-4 { width: calc(var(--module-width) * 4); }
+    .module-table td.mod-5 { width: calc(var(--module-width) * 5); }
+    .module-table td.mod-6 { width: calc(var(--module-width) * 6); }
+    .cell-icon { height: var(--icon-height); }
+    .cell-icon td {
+      border: 1px solid #000;
+      border-bottom: none;
+      vertical-align: middle;
+      overflow: hidden;
+    }
+    .cell-icon td .lucide { width: 0.9cm; height: 0.9cm; stroke-width: 1.9; }
+    .cell-location { height: var(--location-height); color: #1f2937; font-weight: 600; background: white; }
+    .cell-location td {
+      border: 1px solid #000;
+      border-top: none;
+      overflow: hidden;
+      white-space: nowrap;
+      word-break: normal;
+      overflow-wrap: normal;
+      line-height: 1.15;
+      padding-top: 0.02cm;
+      padding-bottom: 0.02cm;
+      padding-left: 0.02cm;
+      padding-right: 0.02cm;
+      vertical-align: top;
+    }
+    .cell-icon td.blue, .cell-location td.blue { background: #3b5ea7; color: #fff; }
+    .cell-icon td.ochre, .cell-location td.ochre { background: #9f6b1f; color: #fff; }
+    .cell-icon td.purple, .cell-location td.purple { background: #6b46a8; color: #fff; }
+    .cell-icon td.red, .cell-location td.red { background: #b34141; color: #fff; }
+    .cell-icon td.green, .cell-location td.green { background: #2f7f55; color: #fff; }
+    .cell-icon td.brown, .cell-location td.brown { background: #7b523a; color: #fff; }
+    .cell-icon td.orange, .cell-location td.orange { background: #b9682e; color: #fff; }
+    .cell-icon td.teal, .cell-location td.teal { background: #2c7f7a; color: #fff; }
+    .cell-icon td.blue .lucide,
+    .cell-icon td.ochre .lucide,
+    .cell-icon td.purple .lucide,
+    .cell-icon td.red .lucide,
+    .cell-icon td.green .lucide,
+    .cell-icon td.brown .lucide,
+    .cell-icon td.orange .lucide,
+    .cell-icon td.teal .lucide { stroke: #fff; }
+    .is-selected { outline: 2px solid #38bdf8; outline-offset: -2px; }
+    .mode-text-90 .cell-location td {
+      position: relative;
+      text-align: center;
+      vertical-align: middle;
+      padding: 0;
+    }
+    .mode-text-90 .text-rotate-wrap {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      transform-origin: center center;
+      white-space: nowrap;
+      overflow: visible;
+    }
+    .mode-text-90 .text-rotate-wrap-multiline {
+      white-space: pre;
+      line-height: 1;
+      font-size: 8pt;
+      text-align: center;
+    }
+    .mode-text-90 .cell-location td {
+      border-top: 1px solid #000;
+    }
+    .mode-text-90 .cell-location { height: var(--label-height); }
+    .row-scroll {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 12px;
+      scrollbar-gutter: stable both-edges;
+    }
+    .labels-row { background: white; border-radius: 12px; box-shadow: var(--ui-shadow); }
+    .print-only { display: none; }
+    .screen-only { display: block; }
+    .print-chunk + .print-chunk { margin-top: 0.25cm; }
+    .print-chunk-label { display: none; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --ui-bg: #1e1e1e;
+        --ui-text: #d4d4d4;
+        --ui-card: #252526;
+        --ui-border: #3c3c3c;
+        --ui-muted: #9da1a6;
+        --ui-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+        --ui-ring: 0 0 0 3px rgba(86, 156, 214, 0.28);
+      }
+      body {
+        background: var(--ui-bg) !important;
+        color: var(--ui-text) !important;
+      }
+      .hide-print header,
+      .hide-print section {
+        background: var(--ui-card) !important;
+        border-color: var(--ui-border) !important;
+      }
+      .hide-print input,
+      .hide-print select,
+      .hide-print textarea,
+      .hide-print button {
+        background: #2d2d30 !important;
+        color: var(--ui-text) !important;
+        border-color: var(--ui-border) !important;
+      }
+      .hide-print input::placeholder,
+      .hide-print textarea::placeholder {
+        color: var(--ui-muted);
+      }
+      .hide-print #icon-picker-panel {
+        background: #252526 !important;
+        border-color: var(--ui-border) !important;
+      }
+      .hide-print #icon-picker-list button:hover {
+        background: #2a2d2e !important;
+      }
+      .hide-print .text-slate-500,
+      .hide-print .text-slate-600 {
+        color: var(--ui-muted) !important;
+      }
+      #labels-root > section,
+      .labels-row {
+        background: #252526 !important;
+        border-color: var(--ui-border) !important;
+        box-shadow: var(--ui-shadow);
+      }
+      .module-table td {
+        border-color: #7f7f7f !important;
+      }
+      .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
+      .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) {
+        background: #1f1f1f !important;
+        color: var(--ui-text) !important;
+      }
+      .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) .lucide {
+        stroke: var(--ui-text) !important;
+      }
+      #copy-link-btn {
+        background: #2d2d30 !important;
+        border-color: #3c3c3c !important;
+        color: #d4d4d4 !important;
+      }
+      #export-json-btn {
+        background: #2d2d30 !important;
+        border-color: #3c3c3c !important;
+        color: #d4d4d4 !important;
+      }
+      #import-json-btn {
+        background: #2d2d30 !important;
+        border-color: #3c3c3c !important;
+        color: #d4d4d4 !important;
+      }
+      #print-btn {
+        background: #2d2d30 !important;
+        border-color: #3c3c3c !important;
+        color: #d4d4d4 !important;
+      }
+      .ui-btn:hover,
+      .hide-print button:hover {
+        background: #37373d !important;
+        border-color: #4f4f57 !important;
+      }
+      .ui-input:focus {
+        border-color: #569cd6 !important;
+        box-shadow: var(--ui-ring) !important;
+      }
+    }
+    html.forced-dark {
+      color-scheme: dark;
+      --ui-bg: #1e1e1e;
+      --ui-text: #d4d4d4;
+      --ui-card: #252526;
+      --ui-border: #3c3c3c;
+      --ui-muted: #9da1a6;
+      --ui-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+      --ui-ring: 0 0 0 3px rgba(86, 156, 214, 0.28);
+    }
+    html.forced-dark body {
+      background: var(--ui-bg) !important;
+      color: var(--ui-text) !important;
+    }
+    html.forced-dark .hide-print header,
+    html.forced-dark .hide-print section {
+      background: var(--ui-card) !important;
+      border-color: var(--ui-border) !important;
+    }
+    html.forced-dark .hide-print input,
+    html.forced-dark .hide-print select,
+    html.forced-dark .hide-print textarea,
+    html.forced-dark .hide-print button {
+      background: #2d2d30 !important;
+      color: var(--ui-text) !important;
+      border-color: var(--ui-border) !important;
+    }
+    html.forced-dark .hide-print input::placeholder,
+    html.forced-dark .hide-print textarea::placeholder {
+      color: var(--ui-muted);
+    }
+    html.forced-dark .hide-print #icon-picker-panel {
+      background: #252526 !important;
+      border-color: var(--ui-border) !important;
+    }
+    html.forced-dark .hide-print #icon-picker-list button:hover {
+      background: #2a2d2e !important;
+    }
+    html.forced-dark .hide-print .text-slate-500,
+    html.forced-dark .hide-print .text-slate-600 {
+      color: var(--ui-muted) !important;
+    }
+    html.forced-dark #labels-root > section,
+    html.forced-dark .labels-row {
+      background: #252526 !important;
+      border-color: var(--ui-border) !important;
+      box-shadow: var(--ui-shadow);
+    }
+    html.forced-dark .module-table td {
+      border-color: #7f7f7f !important;
+    }
+    html.forced-dark .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
+    html.forced-dark .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) {
+      background: #1f1f1f !important;
+      color: var(--ui-text) !important;
+    }
+    html.forced-dark .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) .lucide {
+      stroke: var(--ui-text) !important;
+    }
+    html.forced-dark #copy-link-btn,
+    html.forced-dark #export-json-btn,
+    html.forced-dark #import-json-btn,
+    html.forced-dark #print-btn {
+      background: #2d2d30 !important;
+      border-color: #3c3c3c !important;
+      color: #d4d4d4 !important;
+    }
+    html.forced-dark .ui-btn:hover,
+    html.forced-dark .hide-print button:hover {
+      background: #37373d !important;
+      border-color: #4f4f57 !important;
+    }
+    html.forced-dark .ui-input:focus {
+      border-color: #569cd6 !important;
+      box-shadow: var(--ui-ring) !important;
+    }
+    html.forced-light {
+      color-scheme: light;
+      --ui-bg: #f3f7ff;
+      --ui-text: #0f172a;
+      --ui-card: rgba(255, 255, 255, 0.85);
+      --ui-border: #cbd5e1;
+      --ui-muted: #475569;
+      --ui-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      --ui-ring: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    html.forced-light body {
+      background: #ffffff !important;
+      color: var(--ui-text) !important;
+    }
+    html.forced-light .hide-print header,
+    html.forced-light .hide-print section {
+      background: var(--ui-card) !important;
+      border-color: var(--ui-border) !important;
+    }
+    html.forced-light .hide-print input,
+    html.forced-light .hide-print select,
+    html.forced-light .hide-print textarea,
+    html.forced-light .hide-print button {
+      background: #ffffff !important;
+      color: var(--ui-text) !important;
+      border-color: var(--ui-border) !important;
+    }
+    html.forced-light .hide-print #icon-picker-panel {
+      background: #ffffff !important;
+      border-color: var(--ui-border) !important;
+    }
+    html.forced-light .hide-print #icon-picker-list button:hover {
+      background: #f1f5f9 !important;
+    }
+    html.forced-light .hide-print .text-slate-500,
+    html.forced-light .hide-print .text-slate-600 {
+      color: var(--ui-muted) !important;
+    }
+    html.forced-light #labels-root > section,
+    html.forced-light .labels-row {
+      background: #ffffff !important;
+      border-color: var(--ui-border) !important;
+      box-shadow: var(--ui-shadow);
+    }
+    html.forced-light .module-table td {
+      border-color: #000 !important;
+    }
+    html.forced-light .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
+    html.forced-light .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) {
+      background: #ffffff !important;
+      color: #1f2937 !important;
+    }
+    html.forced-light .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) .lucide {
+      stroke: #111827 !important;
+    }
+    html.forced-light #copy-link-btn {
+      background: #e0f2fe !important;
+      border-color: #7dd3fc !important;
+      color: #0c4a6e !important;
+    }
+    html.forced-light #export-json-btn {
+      background: #e0e7ff !important;
+      border-color: #a5b4fc !important;
+      color: #312e81 !important;
+    }
+    html.forced-light #import-json-btn {
+      background: #ede9fe !important;
+      border-color: #c4b5fd !important;
+      color: #4c1d95 !important;
+    }
+    html.forced-light #print-btn {
+      background: #ccfbf1 !important;
+      border-color: #5eead4 !important;
+      color: #134e4a !important;
+    }
+    html.forced-light .ui-btn:hover,
+    html.forced-light .hide-print button:hover {
+      filter: brightness(0.98);
+    }
+    html.forced-light .ui-input:focus {
+      border-color: #3b82f6 !important;
+      box-shadow: var(--ui-ring) !important;
+    }
+    @media print {
+      .screen-only { display: none !important; }
+      .print-only { display: block !important; }
+      .print-chunk + .print-chunk { margin-top: 0.25cm; }
+      .print-chunk-label {
+        display: block !important;
+        font-size: 9pt;
+        font-weight: 700;
+        margin-bottom: 0.08cm;
+      }
+      html,
+      html.forced-dark,
+      html.forced-light,
+      body,
+      html.forced-dark body,
+      html.forced-light body {
+        color-scheme: light !important;
+        background: #fff !important;
+        color: #000 !important;
+      }
+      html.forced-dark #rows-root > section,
+      html.forced-dark #rows-root .labels-row,
+      html.forced-light #rows-root > section,
+      html.forced-light #rows-root .labels-row {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      html.forced-dark .module-table td,
+      html.forced-light .module-table td {
+        border-color: #000 !important;
+      }
+      html.forced-dark .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
+      html.forced-dark .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
+      html.forced-light .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
+      html.forced-light .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) {
+        background: #fff !important;
+        color: #000 !important;
+      }
+      html.forced-dark .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) .lucide,
+      html.forced-light .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) .lucide {
+        stroke: #000 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="w-full p-2 md:p-4 hide-print">
+    <header class="ui-card flex flex-wrap items-center justify-between gap-2 md:gap-4 border-b pb-2 md:pb-3 px-2 md:px-4 py-2 md:py-3">
+      <h1 id="app-title" class="text-2xl font-semibold"></h1>
+      <div class="flex items-center gap-2">
+        <button id="copy-link-btn" type="button" class="ui-btn ui-input w-9 h-9 inline-flex items-center justify-center text-sm"></button>
+        <button id="import-json-btn" type="button" class="ui-btn ui-input w-9 h-9 inline-flex items-center justify-center text-sm"></button>
+        <button id="export-json-btn" type="button" class="ui-btn ui-input w-9 h-9 inline-flex items-center justify-center text-sm"></button>
+        <button id="print-btn" type="button" class="ui-btn ui-input w-9 h-9 inline-flex items-center justify-center text-sm"></button>
+        <div class="relative w-14 h-9">
+          <i data-lucide="languages" class="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-slate-500"></i>
+          <select id="language-select" class="ui-input w-14 h-9 pl-7 pr-1 text-xs appearance-none">
+            <option value="fr">FR</option>
+            <option value="en">EN</option>
+            <option value="de">DE</option>
+            <option value="es">ES</option>
+          </select>
+        </div>
+        <button id="theme-toggle-btn" type="button" class="ui-btn ui-input w-9 h-9 flex items-center justify-center text-sm" aria-label="" title=""></button>
+      </div>
+    </header>
+    <details class="ui-card mt-2 md:mt-3 border px-3 py-2">
+      <summary id="help-title" class="cursor-pointer text-sm font-semibold"></summary>
+      <p id="help-intro" class="text-sm leading-relaxed mt-2"></p>
+    </details>
+
+    <details id="toolbar-ribbon" class="ui-card mt-2 md:mt-4 border p-2 md:p-4" open>
+      <summary id="toolbar-summary" class="cursor-pointer text-sm font-semibold"></summary>
+      <section class="pt-3 space-y-2 md:space-y-4">
+      <div class="flex flex-wrap gap-2 md:gap-4">
+        <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-1 lg:min-w-[18rem]">
+          <h2 id="project-group-title" class="text-sm font-semibold mb-2"></h2>
+          <div class="grid gap-2">
+            <label class="text-sm">
+              <span id="project-label" class="font-medium"></span>
+              <input id="project-input" type="text" class="ui-input mt-1 px-2 py-1 w-full">
+            </label>
+            <label class="text-sm">
+              <span id="row-size-label" class="font-medium"></span>
+              <input id="row-size-input" type="number" min="1" max="24" class="ui-input mt-1 px-2 py-1 w-full">
+            </label>
+          </div>
+        </section>
+
+        <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-1 lg:min-w-[18rem]">
+          <h2 id="dimensions-group-title" class="text-sm font-semibold mb-2"></h2>
+          <div class="grid gap-2">
+            <label class="text-sm">
+              <span id="format-label" class="font-medium"></span>
+              <input id="label-height-input" type="number" min="20" max="80" step="1" value="30" class="ui-input mt-1 px-2 py-1 w-full">
+            </label>
+            <label class="text-sm">
+              <span id="module-width-label" class="font-medium"></span>
+              <input id="module-width-input" type="number" min="10" max="30" step="0.5" value="18" class="ui-input mt-1 px-2 py-1 w-full">
+            </label>
+            <label class="text-sm flex items-center gap-2 pt-1">
+              <input id="text-90-toggle" type="checkbox" class="border">
+              <span id="text-90-label" class="font-medium"></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-[0.9] lg:min-w-[16rem]">
+          <h2 id="print-group-title" class="text-sm font-semibold mb-2"></h2>
+          <div class="grid gap-2">
+            <label class="text-sm">
+              <span id="page-format-label" class="font-medium"></span>
+              <select id="page-format-select" class="ui-input mt-1 px-2 py-1 w-full">
+                <option value="a4"></option>
+                <option value="a3"></option>
+                <option value="letter"></option>
+                <option value="tabloid"></option>
+              </select>
+            </label>
+          </div>
+        </section>
+      </div>
+      </section>
+      <input id="import-file-input" type="file" accept="application/json,.json" class="hidden">
+    </details>
+  </div>
+
+  <main id="labels-root" class="pb-6">
+    <div id="editor-panel-parking" class="hidden"></div>
+    <div id="rows-root"></div>
+    <aside id="editor-panel-container" class="w-full px-4 pb-3 hide-print">
+      <section class="ui-card border p-2">
+        <h2 id="editor-title" class="font-semibold mb-2 text-sm"></h2>
+        <div class="grid gap-3 lg:grid-cols-3">
+          <div class="text-sm lg:col-span-2">
+            <span id="location-custom-label" class="font-medium"></span>
+            <textarea id="location-input" rows="3" wrap="off" class="ui-input mt-1 w-full px-2 py-0.5 resize-y min-h-[8rem]"></textarea>
+          </div>
+
+          <div class="grid gap-2 content-start">
+            <label class="text-sm">
+              <span id="size-label" class="font-medium"></span>
+              <select id="size-select" class="ui-input mt-1 w-full px-2 py-0.5"></select>
+            </label>
+            <label class="text-sm">
+              <span id="color-label" class="font-medium"></span>
+              <select id="color-select" class="ui-input mt-1 w-full px-2 py-0.5"></select>
+            </label>
+            <label class="text-sm">
+              <span id="icon-label" class="font-medium"></span>
+              <div class="mt-1 relative">
+                <button id="icon-picker-button" type="button" class="ui-input w-full px-2 py-0.5 text-left flex items-center justify-between gap-2">
+                  <span id="icon-picker-value" class="truncate"></span>
+                  <span class="text-slate-500">▼</span>
+                </button>
+                <div id="icon-picker-panel" class="hidden absolute z-20 mt-1 w-full border bg-white shadow-sm rounded-xl overflow-hidden">
+                  <input id="icon-picker-search" type="text" class="ui-input w-full rounded-none border-0 border-b px-2 py-1 text-sm" placeholder="">
+                  <div id="icon-picker-list" class="max-h-56 overflow-auto"></div>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </main>
+  <div class="w-full p-2 md:p-4 hide-print">
+    <button id="add-row-bottom-btn" type="button" class="ui-btn ui-input w-full px-4 py-2 text-sm inline-flex items-center justify-center gap-2"></button>
+  </div>
+</body>
+</html>
