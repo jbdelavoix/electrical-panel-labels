@@ -44,6 +44,17 @@
       box-shadow: var(--ui-shadow);
       backdrop-filter: blur(4px);
     }
+    /* When params panel is closed, remove card chrome so no sliver of border/shadow shows */
+    #project-tools-details:not([open]) {
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      background: transparent;
+      backdrop-filter: none;
+      overflow: hidden;
+    }
     .ui-input {
       border: 1px solid var(--ui-border);
       border-radius: 10px;
@@ -112,7 +123,12 @@
         color: #000 !important;
       }
       .sheet-row-break { page-break-before: always; }
-      .is-selected { outline: none !important; }
+      .cell-icon td.is-selected,
+      .cell-location td.is-selected { outline: none !important; }
+      .cell-icon td.is-selected,
+      .cell-location td.is-selected {
+        border: 1px solid #000 !important;
+      }
       #rows-root > section,
       #rows-root .labels-row,
       .print-split,
@@ -121,13 +137,17 @@
         page-break-inside: avoid !important;
       }
     }
-    .module-table { border-collapse: collapse; text-align: center; font-size: 9pt; table-layout: fixed; width: max-content; min-width: max-content; }
+    .module-table {
+      border-collapse: collapse;
+      text-align: center;
+      font-size: 9pt;
+      table-layout: fixed;
+      width: max-content;
+      min-width: max-content;
+      user-select: none;
+      -webkit-user-select: none;
+    }
     .module-table td { width: var(--module-width); box-sizing: border-box; padding-left: 0; padding-right: 0; }
-    .module-table td.mod-2 { width: calc(var(--module-width) * 2); }
-    .module-table td.mod-3 { width: calc(var(--module-width) * 3); }
-    .module-table td.mod-4 { width: calc(var(--module-width) * 4); }
-    .module-table td.mod-5 { width: calc(var(--module-width) * 5); }
-    .module-table td.mod-6 { width: calc(var(--module-width) * 6); }
     .cell-icon { height: var(--icon-height); }
     .cell-icon td {
       border: 1px solid #000;
@@ -167,7 +187,25 @@
     .cell-icon td.brown .lucide,
     .cell-icon td.orange .lucide,
     .cell-icon td.teal .lucide { stroke: #fff; }
-    .is-selected { outline: 2px solid #38bdf8; outline-offset: -2px; }
+    /* One ring across icon + text rows: outer edges cyan, seam stays a normal grid line (no double outline). */
+    .cell-icon td.is-selected {
+      outline: none !important;
+      border-top: 2px solid #38bdf8;
+      border-left: 2px solid #38bdf8;
+      border-right: 2px solid #38bdf8;
+      /* Match default module layout: no internal seam between icon and text rows */
+      border-bottom: none !important;
+    }
+    .cell-location td.is-selected {
+      outline: none !important;
+      border-top: none !important;
+      border-left: 2px solid #38bdf8;
+      border-right: 2px solid #38bdf8;
+      border-bottom: 2px solid #38bdf8;
+    }
+    .mode-text-90 .cell-location td.is-selected {
+      border: 2px solid #38bdf8 !important;
+    }
     .mode-text-90 .cell-location td {
       position: relative;
       text-align: center;
@@ -255,6 +293,18 @@
       }
       .module-table td {
         border-color: #7f7f7f !important;
+      }
+      .cell-icon td.is-selected {
+        border-top-color: #38bdf8 !important;
+        border-left-color: #38bdf8 !important;
+        border-right-color: #38bdf8 !important;
+        border-bottom: none !important;
+      }
+      .cell-location td.is-selected {
+        border-top: none !important;
+        border-left-color: #38bdf8 !important;
+        border-right-color: #38bdf8 !important;
+        border-bottom-color: #38bdf8 !important;
       }
       .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
       .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) {
@@ -344,6 +394,18 @@
     }
     html.forced-dark .module-table td {
       border-color: #7f7f7f !important;
+    }
+    html.forced-dark .cell-icon td.is-selected {
+      border-top-color: #38bdf8 !important;
+      border-left-color: #38bdf8 !important;
+      border-right-color: #38bdf8 !important;
+      border-bottom: none !important;
+    }
+    html.forced-dark .cell-location td.is-selected {
+      border-top: none !important;
+      border-left-color: #38bdf8 !important;
+      border-right-color: #38bdf8 !important;
+      border-bottom-color: #38bdf8 !important;
     }
     html.forced-dark .cell-icon td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal),
     html.forced-dark .cell-location td:not(.blue):not(.ochre):not(.purple):not(.red):not(.green):not(.brown):not(.orange):not(.teal) {
@@ -502,8 +564,11 @@
 <body>
   <div class="w-full p-2 md:p-4 hide-print">
     <header class="ui-card flex flex-wrap items-center justify-between gap-2 md:gap-4 border-b pb-2 md:pb-3 px-2 md:px-4 py-2 md:py-3">
-      <h1 id="app-title" class="text-2xl font-semibold"></h1>
-      <div class="flex items-center gap-2">
+      <div class="inline-flex min-w-0 max-w-[min(100%,40rem)] items-center gap-2">
+        <h1 id="app-title" class="min-w-0 truncate py-0.5 text-2xl font-semibold leading-tight"></h1>
+        <button id="project-pen-btn" type="button" class="ui-btn ui-input flex h-9 w-9 shrink-0 items-center justify-center text-sm" aria-expanded="false" aria-controls="project-tools-details" title="" aria-label=""></button>
+      </div>
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
         <button id="copy-link-btn" type="button" class="ui-btn ui-input w-9 h-9 inline-flex items-center justify-center text-sm"></button>
         <button id="import-json-btn" type="button" class="ui-btn ui-input w-9 h-9 inline-flex items-center justify-center text-sm"></button>
         <button id="export-json-btn" type="button" class="ui-btn ui-input w-9 h-9 inline-flex items-center justify-center text-sm"></button>
@@ -520,64 +585,60 @@
         <button id="theme-toggle-btn" type="button" class="ui-btn ui-input w-9 h-9 flex items-center justify-center text-sm" aria-label="" title=""></button>
       </div>
     </header>
-    <details class="ui-card mt-2 md:mt-3 border px-3 py-2">
-      <summary id="help-title" class="cursor-pointer text-sm font-semibold"></summary>
-      <p id="help-intro" class="text-sm leading-relaxed mt-2"></p>
-    </details>
-
-    <details id="toolbar-ribbon" class="ui-card mt-2 md:mt-4 border p-2 md:p-4" open>
-      <summary id="toolbar-summary" class="cursor-pointer text-sm font-semibold"></summary>
-      <section class="pt-3 space-y-2 md:space-y-4">
-      <div class="flex flex-wrap gap-2 md:gap-4">
-        <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-1 lg:min-w-[18rem]">
-          <h2 id="project-group-title" class="text-sm font-semibold mb-2"></h2>
-          <div class="grid gap-2">
-            <label class="text-sm">
-              <span id="project-label" class="font-medium"></span>
-              <input id="project-input" type="text" class="ui-input mt-1 px-2 py-1 w-full">
-            </label>
-            <label class="text-sm">
-              <span id="row-size-label" class="font-medium"></span>
-              <input id="row-size-input" type="number" min="1" max="24" class="ui-input mt-1 px-2 py-1 w-full">
-            </label>
-          </div>
-        </section>
-
-        <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-1 lg:min-w-[18rem]">
-          <h2 id="dimensions-group-title" class="text-sm font-semibold mb-2"></h2>
-          <div class="grid gap-2">
-            <label class="text-sm">
-              <span id="format-label" class="font-medium"></span>
-              <input id="label-height-input" type="number" min="20" max="80" step="1" value="30" class="ui-input mt-1 px-2 py-1 w-full">
-            </label>
-            <label class="text-sm">
-              <span id="module-width-label" class="font-medium"></span>
-              <input id="module-width-input" type="number" min="10" max="30" step="0.5" value="18" class="ui-input mt-1 px-2 py-1 w-full">
-            </label>
-            <label class="text-sm flex items-center gap-2 pt-1">
-              <input id="text-90-toggle" type="checkbox" class="border">
-              <span id="text-90-label" class="font-medium"></span>
-            </label>
-          </div>
-        </section>
-
-        <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-[0.9] lg:min-w-[16rem]">
-          <h2 id="print-group-title" class="text-sm font-semibold mb-2"></h2>
-          <div class="grid gap-2">
-            <label class="text-sm">
-              <span id="page-format-label" class="font-medium"></span>
-              <select id="page-format-select" class="ui-input mt-1 px-2 py-1 w-full">
-                <option value="a4"></option>
-                <option value="a3"></option>
-                <option value="letter"></option>
-                <option value="tabloid"></option>
-              </select>
-            </label>
-          </div>
-        </section>
+    <details id="project-tools-details" class="ui-card mt-2 md:mt-4 overflow-hidden hide-print">
+      <summary id="toolbar-summary" class="sr-only cursor-pointer"></summary>
+      <div class="px-3 py-3 md:px-4 md:pb-4 space-y-4">
+        <div>
+          <h3 id="parameters-heading" class="text-sm font-semibold mb-2"></h3>
+          <p id="help-intro" class="text-sm leading-relaxed"></p>
+        </div>
+        <div class="flex flex-wrap gap-2 md:gap-4">
+          <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-1 lg:min-w-[18rem]">
+            <div class="grid gap-2">
+              <label class="text-sm">
+                <span id="project-label" class="font-medium"></span>
+                <input id="project-input" type="text" class="ui-input mt-1 h-9 w-full px-2 py-1" autocomplete="off">
+              </label>
+              <label class="text-sm">
+                <span id="row-size-label" class="font-medium"></span>
+                <input id="row-size-input" type="number" min="1" max="24" class="ui-input mt-1 px-2 py-1 w-full">
+              </label>
+            </div>
+          </section>
+          <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-1 lg:min-w-[18rem]">
+            <h2 id="dimensions-group-title" class="text-sm font-semibold mb-2"></h2>
+            <div class="grid gap-2">
+              <label class="text-sm">
+                <span id="format-label" class="font-medium"></span>
+                <input id="label-height-input" type="number" min="20" max="80" step="1" value="30" class="ui-input mt-1 px-2 py-1 w-full">
+              </label>
+              <label class="text-sm">
+                <span id="module-width-label" class="font-medium"></span>
+                <input id="module-width-input" type="number" min="10" max="30" step="0.5" value="18" class="ui-input mt-1 px-2 py-1 w-full">
+              </label>
+              <label class="text-sm flex items-center gap-2 pt-1">
+                <input id="text-90-toggle" type="checkbox" class="border">
+                <span id="text-90-label" class="font-medium"></span>
+              </label>
+            </div>
+          </section>
+          <section class="border rounded-xl p-2 md:p-3 w-full lg:flex-[0.9] lg:min-w-[16rem]">
+            <h2 id="print-group-title" class="text-sm font-semibold mb-2"></h2>
+            <div class="grid gap-2">
+              <label class="text-sm">
+                <span id="page-format-label" class="font-medium"></span>
+                <select id="page-format-select" class="ui-input mt-1 px-2 py-1 w-full">
+                  <option value="a4"></option>
+                  <option value="a3"></option>
+                  <option value="letter"></option>
+                  <option value="tabloid"></option>
+                </select>
+              </label>
+            </div>
+          </section>
+        </div>
+        <input id="import-file-input" type="file" accept="application/json,.json" class="hidden">
       </div>
-      </section>
-      <input id="import-file-input" type="file" accept="application/json,.json" class="hidden">
     </details>
   </div>
 

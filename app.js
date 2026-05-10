@@ -60,6 +60,7 @@ const state = {
   modulesPerRow: 13,
   selectedRowIndex: 0,
   selectedModuleIndex: 0,
+  editorOpen: true,
   text90Mode: false,
   permalinkUrl: "",
   rowScrollLeftByIndex: {},
@@ -186,6 +187,39 @@ function trimLocationByModule(locationValue, moduleSize) {
   return String(locationValue || "");
 }
 
+function normalizeModuleSize(value) {
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return 1;
+  const rounded = Math.round(parsed * 2) / 2;
+  return Math.max(0.5, Math.min(24, rounded));
+}
+
+function toHalfUnits(value) {
+  return Math.round(normalizeModuleSize(value) * 2);
+}
+
+function fromHalfUnits(halfUnits) {
+  return halfUnits / 2;
+}
+
+function formatModuleSize(value) {
+  const normalized = normalizeModuleSize(value);
+  return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(1);
+}
+
+function buildProjectExportFilename() {
+  const date = new Date().toISOString().slice(0, 10);
+  const product = "panel-labels";
+  const rawProject = String(state.projectTitle || text("project") || "project").trim().toLowerCase();
+  const safeProject = rawProject
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${date}-${product}-${safeProject || "project"}.json`;
+}
+
 function getDisplayLocationHtml(module, moduleSize) {
   return trimLocationByModule(module.loc || "", moduleSize).replaceAll("\n", "<br>");
 }
@@ -200,20 +234,19 @@ function renderLocationCellHtml(module, moduleSpan) {
 
 function normalizeModule(module) {
   if (!module.img) module.img = "";
-  if (module.mod) module.mod = Number(module.mod);
-  if (!module.mod || Number.isNaN(module.mod)) module.mod = 1;
+  module.mod = normalizeModuleSize(module.mod || 1);
   if (!module.col) module.col = "";
   module.loc = trimLocationByModule(module.loc || "", module.mod);
 }
 
 function getOccupiedSlots(modules) {
-  let occupied = modules.length;
-  for (const mod of modules) occupied += Math.max(1, Number(mod.mod || 1)) - 1;
-  return occupied;
+  let occupiedHalfUnits = 0;
+  for (const mod of modules) occupiedHalfUnits += toHalfUnits(mod.mod || 1);
+  return fromHalfUnits(occupiedHalfUnits);
 }
 
-function createEmptyModule() {
-  return { loc: "", mod: 1, img: "", col: "" };
+function createEmptyModule(size = 1) {
+  return { loc: "", mod: normalizeModuleSize(size), img: "", col: "" };
 }
 
 function moduleColorClass(module) {
@@ -227,14 +260,20 @@ function getRowModulesPerRow(row) {
 }
 
 function ensureRowSize(modules, targetModulesPerRow = state.modulesPerRow) {
-  let occupied = getOccupiedSlots(modules);
-  while (occupied > targetModulesPerRow && modules.length > 1) {
+  const targetHalfUnits = Math.max(2, Math.round(Number(targetModulesPerRow || 1) * 2));
+  let occupiedHalfUnits = 0;
+  for (const module of modules) occupiedHalfUnits += toHalfUnits(module.mod || 1);
+
+  while (occupiedHalfUnits > targetHalfUnits && modules.length > 1) {
     const removed = modules.pop();
-    occupied -= Math.max(1, Number(removed.mod || 1));
+    occupiedHalfUnits -= toHalfUnits(removed.mod || 1);
   }
-  while (occupied < targetModulesPerRow) {
-    modules.push(createEmptyModule());
-    occupied += 1;
+
+  while (occupiedHalfUnits < targetHalfUnits) {
+    const remainingHalfUnits = targetHalfUnits - occupiedHalfUnits;
+    const insertHalfUnits = Math.min(2, remainingHalfUnits);
+    modules.push(createEmptyModule(fromHalfUnits(insertHalfUnits)));
+    occupiedHalfUnits += insertHalfUnits;
   }
 }
 
@@ -252,7 +291,7 @@ function getSelectedModule() {
 }
 
 function getEffectiveModuleSize(module, rowIndex, moduleIndex) {
-  return Math.max(1, Number(module.mod || 1));
+  return normalizeModuleSize(module.mod || 1);
 }
 
 function buildDisplayModules(row, rowIndex) {
@@ -263,28 +302,30 @@ function buildDisplayModules(row, rowIndex) {
 function getMaxSpanForModule(rowIndex, moduleIndex) {
   const row = state.rows[rowIndex];
   if (!row) return 1;
-  const rowModulesPerRow = getRowModulesPerRow(row);
-  let occupiedBefore = 0;
+  const rowHalfUnits = Math.round(getRowModulesPerRow(row) * 2);
+  let occupiedBeforeHalfUnits = 0;
   for (let index = 0; index < moduleIndex; index += 1) {
     const module = row.modules[index];
-    occupiedBefore += Math.max(1, Number(module?.mod || 1));
+    occupiedBeforeHalfUnits += toHalfUnits(module?.mod || 1);
   }
-  const maxByWidth = rowModulesPerRow - occupiedBefore;
-  return Math.max(1, Math.min(6, maxByWidth));
+  // Remaining width from the start of this module to the end of the row (not full row if not first).
+  const availableHalfUnits = rowHalfUnits - occupiedBeforeHalfUnits;
+  const safeHalfUnits = Math.max(1, availableHalfUnits);
+  return fromHalfUnits(safeHalfUnits);
 }
 
 function consumeSlotsAfterItems(items, startIndex, slotsToConsume) {
-  let remaining = slotsToConsume;
+  let remainingHalfUnits = toHalfUnits(slotsToConsume);
   let cursor = startIndex + 1;
-  while (remaining > 0 && cursor < items.length) {
+  while (remainingHalfUnits > 0 && cursor < items.length) {
     const currentItem = items[cursor];
-    const currentSize = Math.max(1, Number(currentItem.module?.mod || 1));
-    if (currentSize <= remaining) {
+    const currentHalfUnits = toHalfUnits(currentItem.module?.mod || 1);
+    if (currentHalfUnits <= remainingHalfUnits) {
       items.splice(cursor, 1);
-      remaining -= currentSize;
+      remainingHalfUnits -= currentHalfUnits;
     } else {
-      currentItem.module.mod = currentSize - remaining;
-      remaining = 0;
+      currentItem.module.mod = fromHalfUnits(currentHalfUnits - remainingHalfUnits);
+      remainingHalfUnits = 0;
     }
   }
 }
@@ -292,19 +333,24 @@ function consumeSlotsAfterItems(items, startIndex, slotsToConsume) {
 function applyModuleSizeInItems(items, moduleIndex, targetSize) {
   const selectedItem = items[moduleIndex];
   if (!selectedItem) return;
-  const previousSize = Math.max(1, Number(selectedItem.module?.mod || 1));
-  const nextSize = Math.max(1, Number(targetSize || 1));
-  if (nextSize === previousSize) return;
+  const previousHalfUnits = toHalfUnits(selectedItem.module?.mod || 1);
+  const nextHalfUnits = toHalfUnits(targetSize || 1);
+  if (nextHalfUnits === previousHalfUnits) return;
 
-  if (nextSize > previousSize) {
-    consumeSlotsAfterItems(items, moduleIndex, nextSize - previousSize);
+  if (nextHalfUnits > previousHalfUnits) {
+    consumeSlotsAfterItems(items, moduleIndex, fromHalfUnits(nextHalfUnits - previousHalfUnits));
   } else {
-    const slotsToInsert = previousSize - nextSize;
-    const inserted = Array.from({ length: slotsToInsert }, () => ({ module: createEmptyModule(), sourceIndex: null }));
+    const inserted = [];
+    let remainingHalfUnits = previousHalfUnits - nextHalfUnits;
+    while (remainingHalfUnits > 0) {
+      const insertHalfUnits = Math.min(2, remainingHalfUnits);
+      inserted.push({ module: createEmptyModule(fromHalfUnits(insertHalfUnits)), sourceIndex: null });
+      remainingHalfUnits -= insertHalfUnits;
+    }
     items.splice(moduleIndex + 1, 0, ...inserted);
   }
 
-  selectedItem.module.mod = nextSize;
+  selectedItem.module.mod = fromHalfUnits(nextHalfUnits);
 }
 
 function applyModuleSizeInRow(row, moduleIndex, targetSize) {
@@ -314,33 +360,42 @@ function applyModuleSizeInRow(row, moduleIndex, targetSize) {
 }
 
 function moduleClass(module, rowIndex, moduleIndex) {
-  const widthClass = `mod-${getEffectiveModuleSize(module, rowIndex, moduleIndex)}`;
-  const selected = rowIndex === state.selectedRowIndex && moduleIndex === state.selectedModuleIndex ? " is-selected" : "";
-  return widthClass + selected;
+  const selected = state.editorOpen
+    && rowIndex === state.selectedRowIndex
+    && moduleIndex === state.selectedModuleIndex
+    ? " is-selected"
+    : "";
+  return selected;
 }
 
 function getRenderedItemsForRow(row, rowIndex) {
-  const rowModulesPerRow = getRowModulesPerRow(row);
+  const rowHalfUnits = Math.round(getRowModulesPerRow(row) * 2);
   const displayModules = buildDisplayModules(row, rowIndex);
   const renderedItems = [];
-  let occupiedSlots = 0;
+  let occupiedHalfUnits = 0;
   for (let displayIndex = 0; displayIndex < displayModules.length; displayIndex += 1) {
-    if (occupiedSlots >= rowModulesPerRow) break;
+    if (occupiedHalfUnits >= rowHalfUnits) break;
     const displayItem = displayModules[displayIndex];
     const module = displayItem.module;
     const sourceIndex = displayItem.sourceIndex;
-    const requestedSpan = sourceIndex === null
-      ? Math.max(1, Number(module.mod || 1))
-      : getEffectiveModuleSize(module, rowIndex, sourceIndex);
-    const moduleSpan = Math.min(requestedSpan, rowModulesPerRow - occupiedSlots);
-    renderedItems.push({ module, sourceIndex, moduleSpan });
-    occupiedSlots += moduleSpan;
+    const requestedHalfUnits = sourceIndex === null
+      ? toHalfUnits(module.mod || 1)
+      : toHalfUnits(getEffectiveModuleSize(module, rowIndex, sourceIndex));
+    const moduleSpanHalfUnits = Math.min(requestedHalfUnits, rowHalfUnits - occupiedHalfUnits);
+    renderedItems.push({
+      module,
+      sourceIndex,
+      moduleSpanHalfUnits,
+      moduleSpan: fromHalfUnits(moduleSpanHalfUnits),
+    });
+    occupiedHalfUnits += moduleSpanHalfUnits;
   }
   return renderedItems;
 }
 
 function buildModuleTable(items, rowIndex, options = {}) {
-  const slotCount = Math.max(1, Number(options.slotCount || 1));
+  const slotCount = Math.max(0.5, Number(options.slotCount || 1));
+  const halfSlotCount = Math.max(1, Math.round(slotCount * 2));
   const interactive = Boolean(options.interactive);
 
   const table = document.createElement("table");
@@ -349,9 +404,9 @@ function buildModuleTable(items, rowIndex, options = {}) {
   table.style.minWidth = `${(getModuleWidthMm() * slotCount).toFixed(2)}mm`;
 
   const colgroup = document.createElement("colgroup");
-  for (let colIndex = 0; colIndex < slotCount; colIndex += 1) {
+  for (let colIndex = 0; colIndex < halfSlotCount; colIndex += 1) {
     const col = document.createElement("col");
-    col.style.width = `${getModuleWidthMm()}mm`;
+    col.style.width = `${(getModuleWidthMm() / 2).toFixed(2)}mm`;
     colgroup.appendChild(col);
   }
   table.appendChild(colgroup);
@@ -365,16 +420,19 @@ function buildModuleTable(items, rowIndex, options = {}) {
     const module = item.module;
     const sourceIndex = item.sourceIndex;
     const moduleSpan = item.moduleSpan;
-    const baseClass = sourceIndex === null ? `mod-${moduleSpan}` : moduleClass(module, rowIndex, sourceIndex);
+    const moduleSpanHalfUnits = Number.isInteger(item.moduleSpanHalfUnits)
+      ? item.moduleSpanHalfUnits
+      : toHalfUnits(moduleSpan);
+    const baseClass = sourceIndex === null ? "" : moduleClass(module, rowIndex, sourceIndex);
 
     const tdIcon = document.createElement("td");
-    tdIcon.className = `${baseClass} ${moduleColorClass(module)}`;
-    tdIcon.colSpan = moduleSpan;
+    tdIcon.className = `${baseClass} ${moduleColorClass(module)}`.trim();
+    tdIcon.colSpan = Math.max(1, moduleSpanHalfUnits);
     tdIcon.innerHTML = module.img ? `<i data-lucide="${module.img}" class="inline-block w-8 h-8"></i>` : "";
 
     const tdLoc = document.createElement("td");
-    tdLoc.className = `${baseClass} ${moduleColorClass(module)}`;
-    tdLoc.colSpan = moduleSpan;
+    tdLoc.className = `${baseClass} ${moduleColorClass(module)}`.trim();
+    tdLoc.colSpan = Math.max(1, moduleSpanHalfUnits);
     if (interactive) {
       tdLoc.dataset.rowIndex = String(rowIndex);
       tdLoc.dataset.moduleIndex = String(sourceIndex ?? -1);
@@ -382,20 +440,20 @@ function buildModuleTable(items, rowIndex, options = {}) {
     }
     tdLoc.innerHTML = renderLocationCellHtml(module, moduleSpan);
     if (interactive && sourceIndex !== null) {
-      tdIcon.onclick = (event) => {
-        const previousTop = event.currentTarget instanceof Element
-          ? event.currentTarget.getBoundingClientRect().top
-          : null;
-        selectModule(rowIndex, sourceIndex);
-        renderAllPreserveViewport(previousTop);
+      const onModuleCellActivate = (event) => {
+        const scrollHost = event.currentTarget?.closest?.("[data-row-scroll-index]");
+        const previousTop = scrollHost instanceof Element ? scrollHost.getBoundingClientRect().top : null;
+        const sameSlot = state.selectedRowIndex === rowIndex && state.selectedModuleIndex === sourceIndex;
+        if (sameSlot) {
+          state.editorOpen = !state.editorOpen;
+        } else {
+          selectModule(rowIndex, sourceIndex);
+          state.editorOpen = true;
+        }
+        renderAllPreserveViewport(previousTop, rowIndex);
       };
-      tdLoc.onclick = (event) => {
-        const previousTop = event.currentTarget instanceof Element
-          ? event.currentTarget.getBoundingClientRect().top
-          : null;
-        selectModule(rowIndex, sourceIndex);
-        renderAllPreserveViewport(previousTop);
-      };
+      tdIcon.onclick = onModuleCellActivate;
+      tdLoc.onclick = onModuleCellActivate;
     }
 
     if (!state.text90Mode) {
@@ -595,6 +653,7 @@ function renderLabels() {
       state.selectedRowIndex = Math.max(0, Math.min(state.selectedRowIndex, state.rows.length - 1));
       const selectedRow = state.rows[state.selectedRowIndex];
       state.selectedModuleIndex = Math.max(0, Math.min(state.selectedModuleIndex, (selectedRow?.modules?.length || 1) - 1));
+      state.editorOpen = true;
       renderAll();
     };
     rowHeader.appendChild(rowLeft);
@@ -653,7 +712,7 @@ function renderLabels() {
     wrapper.appendChild(printContainer);
 
     rowsRoot.appendChild(wrapper);
-    if (rowIndex === state.selectedRowIndex && editorPanel) {
+    if (state.editorOpen && rowIndex === state.selectedRowIndex && editorPanel) {
       rowsRoot.appendChild(editorPanel);
     }
     const savedScrollLeft = state.rowScrollLeftByIndex[rowIndex];
@@ -668,15 +727,16 @@ function selectModule(rowIndex, moduleIndex) {
   state.selectedModuleIndex = moduleIndex;
 }
 
-function renderAllPreserveViewport(previousTop = null) {
+function renderAllPreserveViewport(previousAnchorTop = null, rowScrollIndex = null) {
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
   renderAll();
-  if (typeof previousTop === "number") {
-    const selectedCell = document.querySelector(".cell-location td.is-selected, .cell-icon td.is-selected");
-    if (selectedCell) {
-      const nextTop = selectedCell.getBoundingClientRect().top;
-      window.scrollBy(0, nextTop - previousTop);
+  if (typeof previousAnchorTop === "number" && typeof rowScrollIndex === "number") {
+    const rowsRootNode = document.getElementById("rows-root");
+    const anchor = rowsRootNode?.querySelector(`[data-row-scroll-index="${rowScrollIndex}"]`);
+    if (anchor) {
+      const nextTop = anchor.getBoundingClientRect().top;
+      window.scrollBy(0, nextTop - previousAnchorTop);
       return;
     }
   }
@@ -684,6 +744,7 @@ function renderAllPreserveViewport(previousTop = null) {
 }
 
 function renderEditor() {
+  if (!state.editorOpen) return;
   const module = getSelectedModule();
   document.getElementById("editor-title").textContent = `${text("editor")} #${state.selectedRowIndex + 1}.${state.selectedModuleIndex + 1}`;
   document.getElementById("icon-label").textContent = text("icon");
@@ -704,7 +765,7 @@ function renderEditor() {
     // Keep focus/caret: update only selected preview cell instead of re-rendering rows/editor.
     const selectedLocationCell = document.querySelector(".cell-location td.is-selected");
     if (selectedLocationCell) {
-      const moduleSpan = Math.max(1, Number(selectedLocationCell.dataset.moduleSpan || module.mod || 1));
+      const moduleSpan = normalizeModuleSize(selectedLocationCell.dataset.moduleSpan || module.mod || 1);
       selectedLocationCell.innerHTML = renderLocationCellHtml(module, moduleSpan);
     }
     refreshPermalink();
@@ -712,13 +773,18 @@ function renderEditor() {
 
   const sizeSelect = document.getElementById("size-select");
   const maxSize = getMaxSpanForModule(state.selectedRowIndex, state.selectedModuleIndex);
-  sizeSelect.innerHTML = Array.from({ length: maxSize }, (_, i) => i + 1).map((size) => `<option value="${size}">${size}</option>`).join("");
-  const selectedSize = Math.min(maxSize, Number(module.mod || 1));
+  const maxHalfUnits = Math.round(maxSize * 2);
+  const sizeSteps = Array.from({ length: maxHalfUnits }, (_, index) => (index + 1) / 2);
+  sizeSelect.innerHTML = sizeSteps.map((size) => `<option value="${size}">${formatModuleSize(size)}</option>`).join("");
+  const selectedSize = Math.min(maxSize, normalizeModuleSize(module.mod || 1));
   sizeSelect.value = String(selectedSize);
   sizeSelect.onchange = (e) => {
     const row = state.rows[state.selectedRowIndex];
     const currentModule = row.modules[state.selectedModuleIndex];
-    const finalSize = Math.min(getMaxSpanForModule(state.selectedRowIndex, state.selectedModuleIndex), Number(e.target.value));
+    const finalSize = Math.min(
+      getMaxSpanForModule(state.selectedRowIndex, state.selectedModuleIndex),
+      normalizeModuleSize(Number(e.target.value)),
+    );
     applyModuleSizeInRow(row, state.selectedModuleIndex, finalSize);
     currentModule.mod = finalSize;
     currentModule.loc = trimLocationByModule(currentModule.loc, currentModule.mod);
@@ -799,11 +865,12 @@ function setupIconPicker(module) {
 
   list.querySelectorAll("button[data-icon]").forEach((item) => {
     item.onclick = () => {
-      const selectedCell = document.querySelector(".cell-location td.is-selected, .cell-icon td.is-selected");
-      const previousTop = selectedCell ? selectedCell.getBoundingClientRect().top : null;
+      const rowsRootNode = document.getElementById("rows-root");
+      const scrollHost = rowsRootNode?.querySelector(`[data-row-scroll-index="${state.selectedRowIndex}"]`);
+      const previousTop = scrollHost instanceof Element ? scrollHost.getBoundingClientRect().top : null;
       module.img = item.getAttribute("data-icon") || "";
       panel.classList.add("hidden");
-      renderAllPreserveViewport(previousTop);
+      renderAllPreserveViewport(previousTop, state.selectedRowIndex);
     };
   });
 }
@@ -816,7 +883,7 @@ function serializeRowsAsJsonData(rows) {
       const icon = String(module.img || "");
       const location = String(module.loc || "");
       const color = String(module.col || "");
-      const moduleSize = Number(module.mod || 1);
+      const moduleSize = normalizeModuleSize(module.mod || 1);
       if (icon) payload.img = icon;
       if (location) payload.loc = location;
       if (moduleSize !== 1) payload.mod = moduleSize;
@@ -950,21 +1017,27 @@ function renderTopBarText() {
   applyModuleWidthCss();
   applyLabelHeightCss();
   const displayProjectTitle = String(state.projectTitle || "").trim() || text("project");
-  document.getElementById("app-title").textContent = displayProjectTitle;
-  document.getElementById("app-title").setAttribute("title", text("appTitle"));
-  const helpTitle = document.getElementById("help-title");
-  if (helpTitle) helpTitle.textContent = text("helpTitle");
+  const appTitleEl = document.getElementById("app-title");
+  if (appTitleEl) {
+    appTitleEl.textContent = displayProjectTitle;
+    appTitleEl.setAttribute("title", text("appTitle"));
+  }
+  const projectLabel = document.getElementById("project-label");
+  if (projectLabel) projectLabel.textContent = text("project");
+  const projectInput = document.getElementById("project-input");
+  if (projectInput && document.activeElement !== projectInput) {
+    projectInput.value = state.projectTitle || "";
+  }
+  const parametersHeadingEl = document.getElementById("parameters-heading");
+  if (parametersHeadingEl) parametersHeadingEl.textContent = text("parametersHeading");
   const helpIntro = document.getElementById("help-intro");
   if (helpIntro) helpIntro.textContent = text("helpIntro");
-  const projectGroupTitle = document.getElementById("project-group-title");
-  if (projectGroupTitle) projectGroupTitle.textContent = text("project");
   const toolbarSummary = document.getElementById("toolbar-summary");
-  if (toolbarSummary) toolbarSummary.textContent = text("settingsRibbon");
+  if (toolbarSummary) toolbarSummary.textContent = text("parametersHeading");
   const dimensionsGroupTitle = document.getElementById("dimensions-group-title");
   if (dimensionsGroupTitle) dimensionsGroupTitle.textContent = text("labelHeight");
   const printGroupTitle = document.getElementById("print-group-title");
   if (printGroupTitle) printGroupTitle.textContent = text("print");
-  document.getElementById("project-label").textContent = text("project");
   const themeButton = document.getElementById("theme-toggle-btn");
   if (themeButton) {
     const isDark = state.themeMode === "dark";
@@ -972,6 +1045,15 @@ function renderTopBarText() {
     themeButton.innerHTML = `<i data-lucide="${isDark ? "sun" : "moon"}" class="w-4 h-4"></i>`;
     themeButton.setAttribute("title", nextModeLabel);
     themeButton.setAttribute("aria-label", nextModeLabel);
+  }
+  const projectToolsDetail = document.getElementById("project-tools-details");
+  const projectPenBtn = document.getElementById("project-pen-btn");
+  if (projectPenBtn) {
+    projectPenBtn.innerHTML = `<i data-lucide="pencil" class="w-4 h-4"></i>`;
+    const penTooltip = text("parametersHeading");
+    projectPenBtn.setAttribute("title", penTooltip);
+    projectPenBtn.setAttribute("aria-label", penTooltip);
+    if (projectToolsDetail) projectPenBtn.setAttribute("aria-expanded", String(projectToolsDetail.open));
   }
   const formatLabel = document.getElementById("format-label");
   if (formatLabel) formatLabel.textContent = text("labelHeight");
@@ -1005,8 +1087,6 @@ function renderTopBarText() {
     button.setAttribute("title", label);
     button.setAttribute("aria-label", label);
   });
-  const projectInput = document.getElementById("project-input");
-  if (projectInput) projectInput.value = state.projectTitle || "";
   if (pageFormatSelect) pageFormatSelect.value = state.paperFormat;
   const labelHeightInput = document.getElementById("label-height-input");
   if (labelHeightInput) labelHeightInput.value = String(getLabelHeightMm());
@@ -1046,6 +1126,19 @@ function bindEvents() {
     if (window.lucide?.createIcons) window.lucide.createIcons();
   };
 
+  const projectToolsDetails = document.getElementById("project-tools-details");
+  const projectPenToggle = document.getElementById("project-pen-btn");
+  projectPenToggle?.addEventListener("click", () => {
+    if (!projectToolsDetails) return;
+    projectToolsDetails.open = !projectToolsDetails.open;
+    if (projectToolsDetails.open) {
+      projectToolsDetails.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
+  projectToolsDetails?.addEventListener("toggle", () => {
+    projectPenToggle?.setAttribute("aria-expanded", String(projectToolsDetails.open));
+  });
+
   document.getElementById("label-height-input").onchange = (e) => {
     const nextHeight = Number(e.target.value);
     if (Number.isNaN(nextHeight) || nextHeight < 20 || nextHeight > 80) {
@@ -1062,11 +1155,17 @@ function bindEvents() {
       renderAll();
     }
   };
-  document.getElementById("project-input").oninput = (e) => {
-    state.projectTitle = String(e.target.value || "").trim();
-    renderTopBarText();
-    refreshPermalink();
-  };
+  const projectInputEl = document.getElementById("project-input");
+  if (projectInputEl) {
+    projectInputEl.oninput = (e) => {
+      state.projectTitle = String(e.target.value || "").trim();
+      const titleEl = document.getElementById("app-title");
+      if (titleEl) {
+        titleEl.textContent = String(state.projectTitle || "").trim() || text("project");
+      }
+      refreshPermalink();
+    };
+  }
   document.getElementById("row-size-input").onchange = (e) => {
     const nextSize = Number(e.target.value);
     if (Number.isNaN(nextSize) || nextSize < 1 || nextSize > 24) {
@@ -1109,6 +1208,7 @@ function bindEvents() {
       normalizeRows(state.rows);
       state.selectedRowIndex = state.rows.length - 1;
       state.selectedModuleIndex = 0;
+      state.editorOpen = true;
       renderAll();
       window.scrollTo(scrollX, scrollY);
     };
@@ -1133,7 +1233,7 @@ function bindEvents() {
           const icon = String(module.img || "");
           const location = String(module.loc || "");
           const color = String(module.col || "");
-          const moduleSize = Number(module.mod || 1);
+          const moduleSize = normalizeModuleSize(module.mod || 1);
           if (icon) out.img = icon;
           if (location) out.loc = location;
           if (moduleSize !== 1) out.mod = moduleSize;
@@ -1148,7 +1248,7 @@ function bindEvents() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `panel-labels-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = buildProjectExportFilename();
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1199,6 +1299,7 @@ function bindEvents() {
         }
       });
       normalizeRows(state.rows);
+      state.editorOpen = true;
       renderAll();
     } catch (error) {
       window.alert(`${text("importError")}: ${error.message}`);
@@ -1275,6 +1376,7 @@ async function bootstrap() {
     }
   }
   normalizeRows(state.rows);
+  state.editorOpen = true;
   const pageFormatSelect = document.getElementById("page-format-select");
   if (pageFormatSelect) pageFormatSelect.value = state.paperFormat;
   bindEvents();

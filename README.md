@@ -1,6 +1,6 @@
 # Electrical Panel Labels
 
-Web app to create, customize, and print electrical panel labels directly in the browser.
+Web app to create, customize, and print labels for electrical distribution panels (circuit breaker boards) directly in the browser.
 
 Live site: [jbdelavoix.github.io/electrical-panel-labels](https://jbdelavoix.github.io/electrical-panel-labels/)
 
@@ -9,12 +9,13 @@ Live site: [jbdelavoix.github.io/electrical-panel-labels](https://jbdelavoix.git
 - Build labels by rows and modules.
 - Configure `Label height` and `Module width` in mm.
 - Set a global modules-per-row value, with optional per-row override.
-- Edit each module (icon, label text, size, color).
+- Edit each module (icon, label text, size in half-module steps, color).
 - Icon picker with multilingual labels and search.
 - Import/export JSON configurations.
 - Compressed permalink support (`gz-b64`) with live URL sync.
 - Automatic print plan (paper format, orientation, splitting, page optimization).
 - Dark/light UI with print always forced to light mode.
+- Parameters and help text sit behind the pencil button next to the project title (collapsible panel).
 - UI localization: French, English, German, Spanish.
 
 ## Quick Start
